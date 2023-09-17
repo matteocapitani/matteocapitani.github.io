@@ -3,13 +3,19 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://matteocapitani.github.io/posts/settingup/</loc>
+    <lastmod>2023-09-17T18:15:20+02:00</lastmod>
+  </url><url>
+    <loc>https://matteocapitani.github.io/posts/</loc>
+    <lastmod>2023-09-17T18:15:20+02:00</lastmod>
+  </url><url>
+    <loc>https://matteocapitani.github.io/</loc>
+    <lastmod>2023-09-17T18:15:20+02:00</lastmod>
+  </url><url>
+    <loc>https://matteocapitani.github.io/posts/prova/</loc>
+    <lastmod>2023-09-17T18:12:20+02:00</lastmod>
   </url><url>
     <loc>https://matteocapitani.github.io/categories/</loc>
   </url><url>
-    <loc>https://matteocapitani.github.io/posts/</loc>
-  </url><url>
     <loc>https://matteocapitani.github.io/tags/</loc>
-  </url><url>
-    <loc>https://matteocapitani.github.io/</loc>
   </url>
 </urlset>
