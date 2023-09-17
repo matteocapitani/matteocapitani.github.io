@@ -1,0 +1,520 @@
+<!doctype html>
+
+<html lang="en-us">
+
+<head>
+  <title>The Experiments Notebook</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="The HTML5 Herald" />
+<meta name="author" content="" /><meta property="og:title" content="" />
+<meta property="og:description" content="Introduction In this article, I want to explore active learning for an NLP classification problem. Specifically, using the Spooky Author Identification competition dataset, I want to label, pretending to start from a completely unlabelled dataset.
+The primary references for the active learning are the MIT Introduction to Data-Centric AI course, and, in particular, the third class) and Human in the Loop Machine Learning.
+I face the problem of manually annotating a dataset for many projects, and becoming more systematic is the goal of this article." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://matteocapitani.github.io/posts/settingup/" /><meta property="article:section" content="posts" />
+
+
+
+
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content=""/>
+<meta name="twitter:description" content="Introduction In this article, I want to explore active learning for an NLP classification problem. Specifically, using the Spooky Author Identification competition dataset, I want to label, pretending to start from a completely unlabelled dataset.
+The primary references for the active learning are the MIT Introduction to Data-Centric AI course, and, in particular, the third class) and Human in the Loop Machine Learning.
+I face the problem of manually annotating a dataset for many projects, and becoming more systematic is the goal of this article."/>
+
+<meta name="generator" content="Hugo 0.92.2" />
+    
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" integrity="sha256-l85OmPOjvil/SOvVt3HnSSjzF1TUMyT9eV0c2BzEGzU=" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://matteocapitani.github.io/fontawesome/css/all.min.css" />
+  
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto+Slab|Ruda" />
+  
+  
+  <link rel="stylesheet" type="text/css" href="/css/styles.css" />
+</head>
+
+<body>
+  <div id="container">
+    <header>
+      
+      <h1>
+        <a href="/">The Experiments Notebook</a>
+      </h1>
+
+      <ul id="social-media">
+      </ul>
+      
+    </header>
+
+    
+<nav>
+    <ul>
+        
+    </ul>
+</nav>
+
+
+    <main>
+
+
+
+
+<article>
+
+    <h1></h1>
+
+    
+      <aside>
+    <ul>
+        <li>
+            <time class="post-date" datetime="0001-01-01T00:00:00Z">Jan 1, 0001</time>
+        </li>
+        
+        
+
+        
+
+        <li>10 minute read</li>
+    </ul>
+</aside>
+
+    
+
+    
+      
+
+    
+
+    <h1 id="introduction">Introduction</h1>
+<p>In this article, I want to explore active learning for an NLP classification problem. Specifically, using the <a href="https://www.kaggle.com/competitions/spooky-author-identification">Spooky Author Identification</a> competition dataset, I want to label, pretending to start from a completely unlabelled dataset.</p>
+<p>The primary references for the active learning are <a href="https://dcai.csail.mit.edu/">the MIT Introduction to Data-Centric AI course</a>, and, in particular, <a href="https://dcai.csail.mit.edu/lectures/dataset-creation-curation/">the third class</a>) and <a href="https://www.manning.com/books/human-in-the-loop-machine-learning?experiment=B"><em>Human in the Loop Machine Learning</em></a>.</p>
+<p>I face the problem of manually annotating a dataset for many projects, and becoming more systematic is the goal of this article. For this article, I assume annotators make no error in the data labelling; I think it is reasonable to assume that extracting text from books and annotating with the author is not error prone.</p>
+<p>For this first article, I focus only on the first three steps of the annotation process — the data preparation/ingestion, the first annotation informed by domain knowledge and the training of the first, baseline model.</p>
+<h1 id="preparing-the-dataset">Preparing the Dataset</h1>
+<p>As a first step, I read the data and create an oracle returning the right label when queries; this simulates manual annotators reviewing the text.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">import</span> pandas <span style="color:#66d9ef">as</span> pd
+<span style="color:#f92672">from</span> IPython.display <span style="color:#f92672">import</span> display
+<span style="color:#f92672">from</span> IPython.display <span style="color:#f92672">import</span> Markdown
+
+df <span style="color:#f92672">=</span> pd<span style="color:#f92672">.</span>read_csv(<span style="color:#e6db74">&#34;input/train.csv&#34;</span>)
+display(Markdown(df<span style="color:#f92672">.</span>head()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">id</th>
+<th style="text-align:left">text</th>
+<th style="text-align:left">author</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">id26305</td>
+<td style="text-align:left">This process, however, afforded me no means of ascertaining the dimensions of my dungeon; as I might make its circuit, and return to the point whence I set out, without being aware of the fact; so perfectly uniform seemed the wall.</td>
+<td style="text-align:left">EAP</td>
+</tr>
+<tr>
+<td style="text-align:left">id17569</td>
+<td style="text-align:left">It never once occurred to me that the fumbling might be a mere mistake.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+<tr>
+<td style="text-align:left">id11008</td>
+<td style="text-align:left">In his left hand was a gold snuff box, from which, as he capered down the hill, cutting all manner of fantastic steps, he took snuff incessantly with an air of the greatest possible self satisfaction.</td>
+<td style="text-align:left">EAP</td>
+</tr>
+<tr>
+<td style="text-align:left">id27763</td>
+<td style="text-align:left">How lovely is spring As we looked from Windsor Terrace on the sixteen fertile counties spread beneath, speckled by happy cottages and wealthier towns, all looked as in former years, heart cheering and fair.</td>
+<td style="text-align:left">MWS</td>
+</tr>
+<tr>
+<td style="text-align:left">id12958</td>
+<td style="text-align:left">Finding nothing else, not even gold, the Superintendent abandoned his attempts; but a perplexed look occasionally steals over his countenance as he sits thinking at his desk.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+</tbody>
+</table>
+<p>Then, I create an <code>unlabelled</code> dataset, an <code>annotate</code> and test that the annotation is working correctly:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">unlabelled <span style="color:#f92672">=</span> df[[<span style="color:#e6db74">&#34;id&#34;</span>, <span style="color:#e6db74">&#34;text&#34;</span>]]<span style="color:#f92672">.</span>copy()
+truth <span style="color:#f92672">=</span> df[[<span style="color:#e6db74">&#34;id&#34;</span>, <span style="color:#e6db74">&#34;author&#34;</span>]]<span style="color:#f92672">.</span>copy()
+
+
+<span style="color:#66d9ef">def</span> <span style="color:#a6e22e">annotate</span>(truth: pd<span style="color:#f92672">.</span>DataFrame, tobelabelled: pd<span style="color:#f92672">.</span>DataFrame) <span style="color:#f92672">-&gt;</span> pd<span style="color:#f92672">.</span>DataFrame:
+    <span style="color:#66d9ef">return</span> tobelabelled<span style="color:#f92672">.</span>merge(truth, how<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;left&#34;</span>, on<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;id&#34;</span>)
+
+
+display(Markdown(annotate(truth, unlabelled<span style="color:#f92672">.</span>iloc[:<span style="color:#ae81ff">4</span>, :])<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">id</th>
+<th style="text-align:left">text</th>
+<th style="text-align:left">author</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">id26305</td>
+<td style="text-align:left">This process, however, afforded me no means of ascertaining the dimensions of my dungeon; as I might make its circuit, and return to the point whence I set out, without being aware of the fact; so perfectly uniform seemed the wall.</td>
+<td style="text-align:left">EAP</td>
+</tr>
+<tr>
+<td style="text-align:left">id17569</td>
+<td style="text-align:left">It never once occurred to me that the fumbling might be a mere mistake.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+<tr>
+<td style="text-align:left">id11008</td>
+<td style="text-align:left">In his left hand was a gold snuff box, from which, as he capered down the hill, cutting all manner of fantastic steps, he took snuff incessantly with an air of the greatest possible self satisfaction.</td>
+<td style="text-align:left">EAP</td>
+</tr>
+<tr>
+<td style="text-align:left">id27763</td>
+<td style="text-align:left">How lovely is spring As we looked from Windsor Terrace on the sixteen fertile counties spread beneath, speckled by happy cottages and wealthier towns, all looked as in former years, heart cheering and fair.</td>
+<td style="text-align:left">MWS</td>
+</tr>
+</tbody>
+</table>
+<h1 id="how-to-start-the-annotation">How to start the annotation</h1>
+<p>I assume here that I know which authors are present in the dataset. Thus, as a first step, I search for specific keywords that I expect by a specific authors:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">hpl <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#34;cthulhu&#34;</span>, <span style="color:#e6db74">&#34;madness&#34;</span>, <span style="color:#e6db74">&#34;innsmouth&#34;</span>, <span style="color:#e6db74">&#34;arkham&#34;</span>, <span style="color:#e6db74">&#34;providence&#34;</span>]
+mws <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#34;nongtongpaw&#34;</span>, <span style="color:#e6db74">&#34;paris&#34;</span>, <span style="color:#e6db74">&#34;john bull&#34;</span>, <span style="color:#e6db74">&#34;geneva&#34;</span>, <span style="color:#e6db74">&#34;valperga&#34;</span>, <span style="color:#e6db74">&#34;maurice&#34;</span>]
+eap <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#34;gordon&#34;</span>, <span style="color:#e6db74">&#34;ismael&#34;</span>, <span style="color:#e6db74">&#34;julius&#34;</span>, <span style="color:#e6db74">&#34;kempelen&#34;</span>, <span style="color:#e6db74">&#34;mesmer&#34;</span>]
+</code></pre></div><p>I count, among the unlabelled data, any occurence of those words:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">len([j <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> hpl <span style="color:#66d9ef">for</span> j <span style="color:#f92672">in</span> unlabelled[<span style="color:#e6db74">&#34;text&#34;</span>] <span style="color:#66d9ef">if</span> i <span style="color:#f92672">in</span> str(j)<span style="color:#f92672">.</span>lower()])
+</code></pre></div><pre><code>220
+</code></pre>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">len([j <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> mws <span style="color:#66d9ef">for</span> j <span style="color:#f92672">in</span> unlabelled[<span style="color:#e6db74">&#34;text&#34;</span>] <span style="color:#66d9ef">if</span> i <span style="color:#f92672">in</span> str(j)<span style="color:#f92672">.</span>lower()])
+</code></pre></div><pre><code>101
+</code></pre>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">len([j <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> eap <span style="color:#66d9ef">for</span> j <span style="color:#f92672">in</span> unlabelled[<span style="color:#e6db74">&#34;text&#34;</span>] <span style="color:#66d9ef">if</span> i <span style="color:#f92672">in</span> str(j)<span style="color:#f92672">.</span>lower()])
+</code></pre></div><pre><code>35
+</code></pre>
+<p>I sample 34, 33 and 33 among these occurrences (to reach 100 annotated examples):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">df1 <span style="color:#f92672">=</span> unlabelled<span style="color:#f92672">.</span>iloc[
+    [k <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> hpl <span style="color:#66d9ef">for</span> k, j <span style="color:#f92672">in</span> enumerate(unlabelled[<span style="color:#e6db74">&#34;text&#34;</span>]) <span style="color:#66d9ef">if</span> i <span style="color:#f92672">in</span> str(j)<span style="color:#f92672">.</span>lower()], :
+]<span style="color:#f92672">.</span>sample(<span style="color:#ae81ff">34</span>, random_state<span style="color:#f92672">=</span><span style="color:#ae81ff">42</span>)
+display(Markdown(df1<span style="color:#f92672">.</span>head()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">id</th>
+<th style="text-align:left">text</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">id16987</td>
+<td style="text-align:left">I would surely be very glad to get out of malodorous and fear shadowed Innsmouth, and wished there were some other vehicle than the bus driven by that sinister looking fellow Sargent.</td>
+</tr>
+<tr>
+<td style="text-align:left">id06554</td>
+<td style="text-align:left">Probably they traded in Arkham, knowing how little Kingsport liked their habitation, or perhaps being unable to climb down the cliff on the Kingsport side.</td>
+</tr>
+<tr>
+<td style="text-align:left">id04974</td>
+<td style="text-align:left">Iä R&rsquo;lyeh Cthulhu fhtagn Iä Iä No, I shall not shoot myself I cannot be made to shoot myself I shall plan my cousin&rsquo;s escape from that Canton madhouse, and together we shall go to marvel shadowed Innsmouth.</td>
+</tr>
+<tr>
+<td style="text-align:left">id02303</td>
+<td style="text-align:left">The old maps still held good, and I had no trouble; though at Arkham they must have lied when they said the trolleys ran to this place, since I saw not a wire overhead.</td>
+</tr>
+<tr>
+<td style="text-align:left">id13693</td>
+<td style="text-align:left">Then, bolder than the storied Cyclops, great Cthulhu slid greasily into the water and began to pursue with vast wave raising strokes of cosmic potency.</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">df2 <span style="color:#f92672">=</span> unlabelled<span style="color:#f92672">.</span>iloc[
+    [k <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> mws <span style="color:#66d9ef">for</span> k, j <span style="color:#f92672">in</span> enumerate(unlabelled[<span style="color:#e6db74">&#34;text&#34;</span>]) <span style="color:#66d9ef">if</span> i <span style="color:#f92672">in</span> str(j)<span style="color:#f92672">.</span>lower()], :
+]<span style="color:#f92672">.</span>sample(<span style="color:#ae81ff">33</span>, random_state<span style="color:#f92672">=</span><span style="color:#ae81ff">42</span>)
+display(Markdown(df2<span style="color:#f92672">.</span>head()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">id</th>
+<th style="text-align:left">text</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">id14911</td>
+<td style="text-align:left">A servant in Geneva does not mean the same thing as a servant in France and England.</td>
+</tr>
+<tr>
+<td style="text-align:left">id00156</td>
+<td style="text-align:left">Books, indeed, were his sole luxuries, and in Paris these are easily obtained.</td>
+</tr>
+<tr>
+<td style="text-align:left">id07955</td>
+<td style="text-align:left">What, indeed, was my passion for the young girl of the valley in comparison with the fervor, and the delirium, and the spirit lifting ecstasy of adoration with which I poured out my whole soul in tears at the feet of the ethereal Ermengarde?</td>
+</tr>
+<tr>
+<td style="text-align:left">id00187</td>
+<td style="text-align:left">I noticed that at least two thirds of these guests were ladies; and some of the latter were by no means accoutred in what a Parisian would consider good taste at the present day.</td>
+</tr>
+<tr>
+<td style="text-align:left">id02746</td>
+<td style="text-align:left">Doctor Templeton had been a traveller in his younger days, and at Paris had become a convert, in great measure, to the doctrines of Mesmer.</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">df3 <span style="color:#f92672">=</span> unlabelled<span style="color:#f92672">.</span>iloc[
+    [k <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> eap <span style="color:#66d9ef">for</span> k, j <span style="color:#f92672">in</span> enumerate(unlabelled[<span style="color:#e6db74">&#34;text&#34;</span>]) <span style="color:#66d9ef">if</span> i <span style="color:#f92672">in</span> str(j)<span style="color:#f92672">.</span>lower()], :
+]<span style="color:#f92672">.</span>sample(<span style="color:#ae81ff">33</span>, random_state<span style="color:#f92672">=</span><span style="color:#ae81ff">42</span>)
+display(Markdown(df3<span style="color:#f92672">.</span>head()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">id</th>
+<th style="text-align:left">text</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">id18537</td>
+<td style="text-align:left">I had been long in the habit of mesmerizing the person in question, Mr. Vankirk, and the usual acute susceptibility and exaltation of the mesmeric perception had supervened.</td>
+</tr>
+<tr>
+<td style="text-align:left">id18640</td>
+<td style="text-align:left">If many were prevented from adventuring to California, by the mere apprehension that gold would so materially diminish in value, on account of its plentifulness in the mines there, as to render the speculation of going so far in search of it a doubtful one what impression will be wrought now, upon the minds of those about to emigrate, and especially upon the minds of those actually in the mineral region, by the announcement of this astounding discovery of Von Kempelen?</td>
+</tr>
+<tr>
+<td style="text-align:left">id25090</td>
+<td style="text-align:left">I cannot better explain my meaning than by the hypothesis that the mesmeric exaltation enables me to perceive a train of ratiocination which, in my abnormal existence, convinces, but which, in full accordance with the mesmeric phenomena, does not extend, except through its effect, into my normal condition.</td>
+</tr>
+<tr>
+<td style="text-align:left">id10455</td>
+<td style="text-align:left">After a few experiments, they admitted him to be an unusually perfect state of mesmeric trance.</td>
+</tr>
+<tr>
+<td style="text-align:left">id20489</td>
+<td style="text-align:left">That the passages quoted above, with the other similar ones referred to, gave Von Kempelen the hint, I do not in the slightest degree question; but I repeat, it yet remains to be seen whether this momentous discovery itself momentous under any circumstances will be of service or disservice to mankind at large.</td>
+</tr>
+</tbody>
+</table>
+<p>Validating that the heuristic for selecting the cases to be labelled was effective:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">import</span> numpy <span style="color:#66d9ef">as</span> np
+
+
+df1 <span style="color:#f92672">=</span> annotate(truth, df1)
+df2 <span style="color:#f92672">=</span> annotate(truth, df2)
+df3 <span style="color:#f92672">=</span> annotate(truth, df3)
+
+print(np<span style="color:#f92672">.</span>mean(df1[<span style="color:#e6db74">&#34;author&#34;</span>] <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;HPL&#34;</span>))
+print(np<span style="color:#f92672">.</span>mean(df2[<span style="color:#e6db74">&#34;author&#34;</span>] <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;MWS&#34;</span>))
+print(np<span style="color:#f92672">.</span>mean(df3[<span style="color:#e6db74">&#34;author&#34;</span>] <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;EAP&#34;</span>))
+</code></pre></div><pre><code>0.8235294117647058
+0.36363636363636365
+0.9696969696969697
+</code></pre>
+<p>Thus, the keywords for Mary Shelley were not that effective. However, I create the labelled dataset by simple concatenation:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">labelled <span style="color:#f92672">=</span> pd<span style="color:#f92672">.</span>concat((df1, df2, df3))
+display(Markdown(labelled<span style="color:#f92672">.</span>head()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">id</th>
+<th style="text-align:left">text</th>
+<th style="text-align:left">author</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">id16987</td>
+<td style="text-align:left">I would surely be very glad to get out of malodorous and fear shadowed Innsmouth, and wished there were some other vehicle than the bus driven by that sinister looking fellow Sargent.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+<tr>
+<td style="text-align:left">id06554</td>
+<td style="text-align:left">Probably they traded in Arkham, knowing how little Kingsport liked their habitation, or perhaps being unable to climb down the cliff on the Kingsport side.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+<tr>
+<td style="text-align:left">id04974</td>
+<td style="text-align:left">Iä R&rsquo;lyeh Cthulhu fhtagn Iä Iä No, I shall not shoot myself I cannot be made to shoot myself I shall plan my cousin&rsquo;s escape from that Canton madhouse, and together we shall go to marvel shadowed Innsmouth.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+<tr>
+<td style="text-align:left">id02303</td>
+<td style="text-align:left">The old maps still held good, and I had no trouble; though at Arkham they must have lied when they said the trolleys ran to this place, since I saw not a wire overhead.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+<tr>
+<td style="text-align:left">id13693</td>
+<td style="text-align:left">Then, bolder than the storied Cyclops, great Cthulhu slid greasily into the water and began to pursue with vast wave raising strokes of cosmic potency.</td>
+<td style="text-align:left">HPL</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">display(Markdown(labelled[<span style="color:#e6db74">&#34;author&#34;</span>]<span style="color:#f92672">.</span>value_counts()<span style="color:#f92672">.</span>reset_index()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">author</th>
+<th style="text-align:right">count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">EAP</td>
+<td style="text-align:right">54</td>
+</tr>
+<tr>
+<td style="text-align:left">HPL</td>
+<td style="text-align:right">31</td>
+</tr>
+<tr>
+<td style="text-align:left">MWS</td>
+<td style="text-align:right">15</td>
+</tr>
+</tbody>
+</table>
+<p>The dataset is not very balanced. Whether this is caused by the keyword choice or by the difference frequency of the classes in the dataset, I would not know. I create a utility function to remove the labelled data from the labelled dataset:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">remove_labelled</span>(labelled: pd<span style="color:#f92672">.</span>DataFrame, unlabelled: pd<span style="color:#f92672">.</span>DataFrame) <span style="color:#f92672">-&gt;</span> pd<span style="color:#f92672">.</span>DataFrame:
+    <span style="color:#66d9ef">return</span> unlabelled[<span style="color:#f92672">~</span>(unlabelled[<span style="color:#e6db74">&#34;id&#34;</span>]<span style="color:#f92672">.</span>isin(labelled[<span style="color:#e6db74">&#34;id&#34;</span>]))]<span style="color:#f92672">.</span>copy()
+
+
+print(unlabelled<span style="color:#f92672">.</span>shape)
+unlabelled <span style="color:#f92672">=</span> remove_labelled(labelled, unlabelled)
+print(unlabelled<span style="color:#f92672">.</span>shape)
+</code></pre></div><pre><code>(19579, 2)
+(19480, 2)
+</code></pre>
+<p>Then, I labelled a random sample of 50 texts, to validate whether the class imbalance is a feature of the dataset or an artefact of the labelling procedure.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">dfr <span style="color:#f92672">=</span> annotate(truth, unlabelled<span style="color:#f92672">.</span>sample(<span style="color:#ae81ff">50</span>, random_state<span style="color:#f92672">=</span><span style="color:#ae81ff">42</span>))
+unlabelled <span style="color:#f92672">=</span> remove_labelled(labelled, unlabelled)
+</code></pre></div><p>In the new dataset, the labels appear:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">display(Markdown(dfr[<span style="color:#e6db74">&#34;author&#34;</span>]<span style="color:#f92672">.</span>value_counts()<span style="color:#f92672">.</span>reset_index()<span style="color:#f92672">.</span>to_markdown(index<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left">author</th>
+<th style="text-align:right">count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">EAP</td>
+<td style="text-align:right">26</td>
+</tr>
+<tr>
+<td style="text-align:left">HPL</td>
+<td style="text-align:right">14</td>
+</tr>
+<tr>
+<td style="text-align:left">MWS</td>
+<td style="text-align:right">10</td>
+</tr>
+</tbody>
+</table>
+<p>The frequencies are still unbalanced; frequencies are not too different from the previous ones. This means that the search by keywords was not very effective.</p>
+<h1 id="training-a-first-model">Training a first model</h1>
+<p>As the goal is not to produce a submission for the competition, but rather mimicking the annotation of an unlabelled dataset, I choose a simple Naive-Bayes model for the baseline performance. With only 100 points to train the model, there is not much room to optimize hyper-parameters.</p>
+<p>As I am more concerned with the annotation quality, I am not optimizing the Log-Loss, but focus on the analysis of the confusion matrix.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">import</span> matplotlib.pyplot <span style="color:#66d9ef">as</span> plt
+<span style="color:#f92672">from</span> sklearn.feature_extraction.text <span style="color:#f92672">import</span> CountVectorizer
+<span style="color:#f92672">from</span> sklearn.naive_bayes <span style="color:#f92672">import</span> MultinomialNB
+<span style="color:#f92672">from</span> sklearn.metrics <span style="color:#f92672">import</span> confusion_matrix
+<span style="color:#f92672">from</span> sklearn.model_selection <span style="color:#f92672">import</span> train_test_split
+
+
+vectorizer <span style="color:#f92672">=</span> CountVectorizer()<span style="color:#f92672">.</span>fit(labelled[<span style="color:#e6db74">&#34;text&#34;</span>])
+X <span style="color:#f92672">=</span> vectorizer<span style="color:#f92672">.</span>transform(labelled[<span style="color:#e6db74">&#34;text&#34;</span>])
+
+X_train, X_test, Y_train, Y_test <span style="color:#f92672">=</span> train_test_split(
+    X<span style="color:#f92672">.</span>toarray(), labelled[<span style="color:#e6db74">&#34;author&#34;</span>], test_size<span style="color:#f92672">=</span><span style="color:#ae81ff">0.333</span>, random_state<span style="color:#f92672">=</span><span style="color:#ae81ff">42</span>
+)
+model <span style="color:#f92672">=</span> MultinomialNB()<span style="color:#f92672">.</span>fit(X_train, Y_train)
+
+cm <span style="color:#f92672">=</span> pd<span style="color:#f92672">.</span>DataFrame(confusion_matrix(Y_test, model<span style="color:#f92672">.</span>predict(X_test)))
+cm<span style="color:#f92672">.</span>columns <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#34;EAP&#34;</span>, <span style="color:#e6db74">&#34;MWS&#34;</span>, <span style="color:#e6db74">&#34;HPL&#34;</span>]
+cm<span style="color:#f92672">.</span>index <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#34;EAP&#34;</span>, <span style="color:#e6db74">&#34;MWS&#34;</span>, <span style="color:#e6db74">&#34;HPL&#34;</span>]
+display(Markdown(cm<span style="color:#f92672">.</span>to_markdown()))
+</code></pre></div><table>
+<thead>
+<tr>
+<th style="text-align:left"></th>
+<th style="text-align:right">EAP</th>
+<th style="text-align:right">MWS</th>
+<th style="text-align:right">HPL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">EAP</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">1</td>
+<td style="text-align:right">1</td>
+</tr>
+<tr>
+<td style="text-align:left">MWS</td>
+<td style="text-align:right">7</td>
+<td style="text-align:right">5</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">HPL</td>
+<td style="text-align:right">3</td>
+<td style="text-align:right">0</td>
+<td style="text-align:right">1</td>
+</tr>
+</tbody>
+</table>
+<p>The accuracy in this case is:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">accuracy <span style="color:#f92672">=</span> round(
+    <span style="color:#ae81ff">100</span> <span style="color:#f92672">*</span> ((cm<span style="color:#f92672">.</span>iloc[<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>] <span style="color:#f92672">+</span> cm<span style="color:#f92672">.</span>iloc[<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">1</span>] <span style="color:#f92672">+</span> cm<span style="color:#f92672">.</span>iloc[<span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">2</span>]) <span style="color:#f92672">/</span> cm<span style="color:#f92672">.</span>sum()<span style="color:#f92672">.</span>sum()), <span style="color:#ae81ff">1</span>
+)
+print(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{</span>accuracy<span style="color:#e6db74">}</span><span style="color:#e6db74">%&#34;</span>)
+</code></pre></div><pre><code>64.7%
+</code></pre>
+<p>The model is not accurate, and too many authorships are assigned to Edgar Allan Poe. This is probably due to the over-representation of the class in the annotated dataset.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>These were the first, preliminary steps in the process of annotating an unlabelled dataset. After this, new annotations would be performed taking into account (and balancing) random exploration of the unlabelled data and the limits of the current model.</p>
+<p>As Mary Shelley texts are under-represented, I should annotate texts that my model label as <code>MWS</code> to increase model accuracy in predicting <code>MWS</code>. It may be helpful to annotate cases for which the model can not discriminate well between <code>EAP</code> and <code>MWS</code> to reduce the misclassification.</p>
+
+
+</article>
+
+
+<section class="post-nav">
+    <ul>
+        <li>
+        
+        </li>
+        <li>
+        
+        </li>
+    </ul>
+</section>
+  
+    
+    
+  
+
+
+
+
+
+</main>
+    <footer>
+        <ul>
+            <li>
+                <h6>
+                    Rendered by <a href="https://gohugo.io" title="Hugo">Hugo</a> |
+                    <a href="https://matteocapitani.github.io/index.xml">Subscribe </a></h6>
+            </li>
+            
+            
+        </ul>
+    </footer>
+</div>
+<script src="/js/scripts.js"></script>
+
+
+</body>
+
+</html>
+
